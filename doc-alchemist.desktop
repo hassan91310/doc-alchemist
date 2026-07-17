@@ -1,0 +1,11 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Doc Alchemist
+Comment=Convert Markdown, Word and PDF documents with beautiful themes
+Exec=python3 __DIR__/app.py
+Icon=__DIR__/assets/icon.svg
+Terminal=false
+Categories=Office;Utility;
+Keywords=markdown;docx;pdf;convert;pandoc;
+StartupNotify=true

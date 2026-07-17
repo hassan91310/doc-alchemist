@@ -1,0 +1,13 @@
+venv/
+build/
+dist/
+__pycache__/
+*.pyc
+*.spec
+nohup.out
+# converted test documents
+sample*.docx
+sample*.pdf
+sample-*.md
+README.docx
+*_media/
