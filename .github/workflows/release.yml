@@ -1,16 +1,14 @@
 name: Build installers
 
 # Runs when you push a version tag like v1.0.0.
-# Builds the Linux .deb and Windows setup .exe, then publishes them
-# as a release on the public downloads repository.
+# Builds the Linux .deb and Windows setup .exe as downloadable artifacts.
+# The release on the public repo is then published from your machine:
+#   gh run download --dir /tmp/artifacts
+#   gh release create v1.0.0 --repo <you>/doc-alchemist /tmp/artifacts/*/*
 
 on:
   push:
     tags: ["v*"]
-
-env:
-  # the public repo where installers are published
-  RELEASES_REPO: YOURUSER/doc-alchemist
 
 jobs:
   build-deb:
@@ -60,33 +58,3 @@ jobs:
         with:
           name: windows
           path: dist/DocAlchemist-Setup-*.exe
-
-  publish:
-    needs: [build-deb, build-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-      - name: Publish release on public repo
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: ${{ env.RELEASES_REPO }}
-          token: ${{ secrets.RELEASE_TOKEN }}
-          tag_name: ${{ github.ref_name }}
-          name: Doc Alchemist ${{ github.ref_name }}
-          body: |
-            ## Downloads
-
-            | OS | File |
-            |----|------|
-            | Linux Mint / Ubuntu | `doc-alchemist_*_all.deb` |
-            | Windows 10 / 11 | `DocAlchemist-Setup-*.exe` |
-
-            **Linux:** download the .deb and double-click it (or run
-            `sudo apt install ./doc-alchemist_*_all.deb`). All required
-            packages are installed automatically.
-
-            **Windows:** download and run the setup exe. It offers to
-            install pandoc and LibreOffice for you.
-          files: |
-            deb/*.deb
-            windows/*.exe

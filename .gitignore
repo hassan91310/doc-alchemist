@@ -11,3 +11,4 @@ sample*.pdf
 sample-*.md
 README.docx
 *_media/
+.claude/
