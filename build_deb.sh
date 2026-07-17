@@ -16,8 +16,8 @@ mkdir -p "$ROOT/opt/doc-alchemist/assets" \
          "$ROOT/DEBIAN"
 
 # --- app payload: byte-compiled only -----------------------------------------
-python3 -m compileall -b -q app.py converter.py
-mv app.pyc converter.pyc "$ROOT/opt/doc-alchemist/"
+python3 -m compileall -b -q app.py converter.py simple_pdf.py
+mv app.pyc converter.pyc simple_pdf.pyc "$ROOT/opt/doc-alchemist/"
 cp -r themes "$ROOT/opt/doc-alchemist/themes"
 rm -f "$ROOT/opt/doc-alchemist/themes/_base_reference.docx"
 cp assets/icon.svg "$ROOT/opt/doc-alchemist/assets/"
@@ -66,7 +66,7 @@ set -e
 if [ ! -x /opt/doc-alchemist/venv/bin/markitdown ]; then
     echo "Setting up markitdown (PDF support)..."
     python${PYV} -m venv /opt/doc-alchemist/venv 2>/dev/null && \
-    /opt/doc-alchemist/venv/bin/pip install --quiet 'markitdown[pdf,docx]' || \
+    /opt/doc-alchemist/venv/bin/pip install --quiet "markitdown[pdf,docx]" fpdf2 markdown || \
     echo "Warning: markitdown setup failed (no network?). PDF -> Markdown will use basic text extraction."
 fi
 command -v update-desktop-database >/dev/null && update-desktop-database -q /usr/share/applications || true

@@ -16,7 +16,10 @@ ways with beautiful themes:
 - **Markdown → DOCX** — pandoc with a themed *reference docx* (fonts,
   colors and sizes baked in).
 - **Markdown / DOCX → PDF** — the themed docx is exported to PDF by
-  LibreOffice headless, so PDFs match the docx theme exactly.
+  LibreOffice headless, so PDFs match the docx theme exactly. If
+  LibreOffice isn't installed it falls back to MS Word (Windows), and
+  as a last resort to a built-in pure-Python renderer (`simple_pdf.py`,
+  basic but themed).
 - **DOCX → Markdown** — pandoc (GitHub-flavored Markdown, embedded
   images extracted to a `_media` folder).
 - **PDF → Markdown** — [markitdown](https://github.com/microsoft/markitdown)

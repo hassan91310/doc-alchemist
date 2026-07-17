@@ -25,7 +25,7 @@ if not exist "%ProgramFiles%\LibreOffice\program\soffice.exe" (
 echo ==^> Setting up Python packages (markitdown, drag ^& drop)...
 if not exist venv\Scripts\pip.exe py -3 -m venv venv
 venv\Scripts\pip install --quiet --upgrade pip
-venv\Scripts\pip install --quiet "markitdown[pdf,docx]" tkinterdnd2
+venv\Scripts\pip install --quiet "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown docx2pdf
 
 echo ==^> Creating Desktop shortcut...
 powershell -NoProfile -Command ^

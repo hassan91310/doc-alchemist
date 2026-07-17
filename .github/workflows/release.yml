@@ -38,7 +38,7 @@ jobs:
       - name: Generate themes
         run: python make_themes.py
       - name: Install build deps
-        run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2
+        run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown docx2pdf
       - name: Build exe
         run: >
           pyinstaller --noconfirm --onefile --windowed
@@ -48,6 +48,10 @@ jobs:
           --add-data "assets;assets"
           --collect-all tkinterdnd2
           --collect-all markitdown
+          --hidden-import docx2pdf
+          --hidden-import simple_pdf
+          --hidden-import markdown
+          --collect-all fpdf
           app-windows.pyw
       - name: Build installer
         shell: cmd

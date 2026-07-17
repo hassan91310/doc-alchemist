@@ -45,6 +45,10 @@ class ConversionError(Exception):
     pass
 
 
+class NoPdfEngineError(ConversionError):
+    """No LibreOffice / MS Word available for high-quality PDF export."""
+
+
 def input_kind(path):
     ext = Path(path).suffix.lower()
     if ext in MD_EXTS:
@@ -140,19 +144,53 @@ def _docx_to_pdf(src, dest):
             shutil.move(str(produced), str(dest))
         return
     if IS_WINDOWS:
-        # fall back to Microsoft Word via docx2pdf, if installed
+        # fall back to Microsoft Word via docx2pdf
+        try:
+            from docx2pdf import convert as _word_convert
+            _word_convert(str(src), str(dest))
+            if Path(dest).exists():
+                return
+        except Exception:
+            pass
         d2p = _find_bin("docx2pdf",
                         [HERE / "venv" / "Scripts" / "docx2pdf.exe"])
         if d2p:
-            _run([d2p, str(src), str(dest)])
-            if dest.exists():
-                return
-        raise ConversionError(
-            "PDF export needs LibreOffice (or MS Word + docx2pdf).\n"
-            "Run install-windows.bat, or install LibreOffice from "
-            "libreoffice.org.")
-    raise ConversionError("PDF export needs LibreOffice.\n"
-                          "Run: sudo apt install libreoffice-writer")
+            try:
+                _run([d2p, str(src), str(dest)])
+                if Path(dest).exists():
+                    return
+            except ConversionError:
+                pass
+    raise NoPdfEngineError("no LibreOffice or MS Word found")
+
+
+def _venv_python():
+    py = HERE / "venv" / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
+    return py if py.exists() else None
+
+
+def _simple_md_pdf(src_md, dest, theme):
+    """Last-resort md -> pdf via the built-in pure-Python renderer."""
+    try:
+        import simple_pdf  # importable in the frozen exe / dev checkout
+        simple_pdf.render(str(src_md), str(dest), theme)
+        return
+    except ImportError:
+        pass
+    py = _venv_python()
+    script = HERE / "simple_pdf.py"
+    if not script.exists():
+        script = HERE / "simple_pdf.pyc"
+    if py and script.exists():
+        _run([str(py), str(script), str(src_md), str(dest), theme])
+        return
+    raise ConversionError(
+        "No PDF engine found. Install LibreOffice"
+        + (" or MS Word." if IS_WINDOWS else ":\nsudo apt install libreoffice-writer"))
+
+
+SIMPLE_PDF_NOTE = ("LibreOffice/Word not found — used the built-in "
+                   "simple PDF engine (basic styling).")
 
 
 def _docx_to_md(src, dest):
@@ -186,6 +224,20 @@ def _pdf_to_md(src, dest):
         _run(["pdftotext", "-layout", str(src), str(dest)])
         return (f"markitdown is not installed (run {installer}) — "
                 "used basic text extraction instead.")
+    # last resort: pdfminer (ships with markitdown's venv / frozen exe)
+    extract = ("import sys; from pdfminer.high_level import extract_text; "
+               "open(sys.argv[2], 'w', encoding='utf-8')"
+               ".write(extract_text(sys.argv[1]) or '')")
+    try:
+        from pdfminer.high_level import extract_text
+        Path(dest).write_text(extract_text(str(src)) or "", encoding="utf-8")
+        return "used basic text extraction (pdfminer)."
+    except ImportError:
+        pass
+    py = _venv_python()
+    if py:
+        _run([str(py), "-c", extract, str(src), str(dest)])
+        return "used basic text extraction (pdfminer)."
     raise ConversionError(
         f"PDF reading needs markitdown. Run {installer} to set it up.")
 
@@ -208,12 +260,24 @@ def convert(src, out_format, theme="elegant"):
     if kind == "md" and out_format == "docx":
         _md_to_docx(src, dest, theme)
     elif kind == "md" and out_format == "pdf":
-        with tempfile.TemporaryDirectory(prefix="mdconv-") as tmp:
-            tmp_docx = Path(tmp) / (src.stem + ".docx")
-            _md_to_docx(src, tmp_docx, theme)
-            _docx_to_pdf(tmp_docx, dest)
+        try:
+            with tempfile.TemporaryDirectory(prefix="mdconv-") as tmp:
+                tmp_docx = Path(tmp) / (src.stem + ".docx")
+                _md_to_docx(src, tmp_docx, theme)
+                _docx_to_pdf(tmp_docx, dest)
+        except NoPdfEngineError:
+            _simple_md_pdf(src, dest, theme)
+            note = SIMPLE_PDF_NOTE
     elif kind == "docx" and out_format == "pdf":
-        _docx_to_pdf(src, dest)
+        try:
+            _docx_to_pdf(src, dest)
+        except NoPdfEngineError:
+            with tempfile.TemporaryDirectory(prefix="mdconv-") as tmp:
+                tmp_md = Path(tmp) / (src.stem + ".md")
+                _run([_pandoc_bin(), str(src), "-t", "gfm", "--wrap=none",
+                      "-o", str(tmp_md)], cwd=tmp)
+                _simple_md_pdf(tmp_md, dest, theme)
+            note = SIMPLE_PDF_NOTE
     elif kind == "docx" and out_format == "md":
         _docx_to_md(src, dest)
     elif kind == "pdf" and out_format == "md":

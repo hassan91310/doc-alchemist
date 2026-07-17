@@ -17,7 +17,7 @@ if [ ! -x venv/bin/pip ]; then
     python3 -m venv --system-site-packages venv
 fi
 ./venv/bin/pip install --quiet --upgrade pip
-./venv/bin/pip install --quiet 'markitdown[pdf,docx]'
+./venv/bin/pip install --quiet 'markitdown[pdf,docx]' fpdf2 markdown
 
 echo "==> Regenerating document themes..."
 python3 make_themes.py
