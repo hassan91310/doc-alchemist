@@ -214,7 +214,9 @@ def _pdf_to_md(src, dest):
             text = MarkItDown().convert(str(src)).text_content
             Path(dest).write_text(text, encoding="utf-8")
             return ""
-        except ImportError:
+        except Exception:
+            # e.g. magika model data missing from the bundle — fall
+            # through to the plainer extractors below
             pass
     mid = _markitdown_bin()
     if mid:

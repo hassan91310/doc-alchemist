@@ -16,8 +16,13 @@ mkdir -p "$ROOT/opt/doc-alchemist/assets" \
          "$ROOT/DEBIAN"
 
 # --- app payload: byte-compiled only -----------------------------------------
-python3 -m compileall -b -q app.py converter.py simple_pdf.py
-mv app.pyc converter.pyc simple_pdf.pyc "$ROOT/opt/doc-alchemist/"
+python3 -m compileall -b -q app.py converter.py simple_pdf.py updates.py
+mv app.pyc converter.pyc simple_pdf.pyc updates.pyc "$ROOT/opt/doc-alchemist/"
+
+# version stamp read by the in-app update checker (repo only known in CI)
+REPO_SLUG="${GITHUB_REPOSITORY_OWNER:+${GITHUB_REPOSITORY_OWNER}/doc-alchemist}"
+printf '{"version": "%s", "repo": "%s"}\n' "$VERSION" "$REPO_SLUG" \
+    > "$ROOT/opt/doc-alchemist/app_info.json"
 cp -r themes "$ROOT/opt/doc-alchemist/themes"
 rm -f "$ROOT/opt/doc-alchemist/themes/_base_reference.docx"
 cp assets/icon.svg "$ROOT/opt/doc-alchemist/assets/"

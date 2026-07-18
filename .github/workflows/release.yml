@@ -37,6 +37,8 @@ jobs:
         run: choco install pandoc -y
       - name: Generate themes
         run: python make_themes.py
+      - name: Stamp version info
+        run: python -c "import json, os; json.dump({'version': os.environ['GITHUB_REF_NAME'].lstrip('v'), 'repo': os.environ['GITHUB_REPOSITORY_OWNER'] + '/doc-alchemist'}, open('app_info.json', 'w'))"
       - name: Install build deps
         run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown docx2pdf
       - name: Build exe
@@ -46,8 +48,10 @@ jobs:
           --icon assets/icon.ico
           --add-data "themes;themes"
           --add-data "assets;assets"
+          --add-data "app_info.json;."
           --collect-all tkinterdnd2
           --collect-all markitdown
+          --collect-all magika
           --hidden-import docx2pdf
           --hidden-import simple_pdf
           --hidden-import markdown

@@ -3,6 +3,7 @@
 import subprocess
 import threading
 import urllib.parse
+import webbrowser
 from pathlib import Path
 
 import gi
@@ -10,6 +11,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
 
 import converter
+import updates
 
 APP_ID = "com.hassan.docalchemist"
 HERE = Path(__file__).resolve().parent
@@ -30,6 +32,7 @@ CSS = b"""
 .file-name  { font-size: 14px; font-weight: 700; }
 .result-ok  { color: #2e7d32; font-weight: 600; }
 .result-err { color: #c62828; }
+.result-warn { color: #e65100; font-weight: 600; }
 .note       { opacity: 0.7; font-size: 11px; }
 .big-btn    { padding: 8px 26px; font-size: 14px; }
 .credit     { opacity: 0.55; font-size: 11px; }
@@ -50,6 +53,11 @@ class Window(Gtk.ApplicationWindow):
         header = Gtk.HeaderBar(title="Doc Alchemist",
                                subtitle="Markdown ⇆ Word ⇆ PDF")
         header.set_show_close_button(True)
+        upd_btn = Gtk.Button.new_from_icon_name(
+            "software-update-available-symbolic", Gtk.IconSize.BUTTON)
+        upd_btn.set_tooltip_text("Check for updates")
+        upd_btn.connect("clicked", self.on_check_updates)
+        header.pack_end(upd_btn)
         self.set_titlebar(header)
 
         style = Gtk.CssProvider()
@@ -299,6 +307,65 @@ class Window(Gtk.ApplicationWindow):
         self.result_label.show()
         self.open_btn.hide()
         self.folder_btn.hide()
+
+    # --- updates ------------------------------------------------------------
+    def on_check_updates(self, *_):
+        dlg = Gtk.Dialog(title="Updates & dependencies", transient_for=self,
+                         modal=True)
+        dlg.set_default_size(400, -1)
+        dlg.set_resizable(False)
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        area = dlg.get_content_area()
+        area.set_spacing(12)
+        area.set_property("margin", 16)
+        status = Gtk.Label(label="Checking…")
+        status.set_line_wrap(True)
+        status.set_max_width_chars(44)
+        status.set_justify(Gtk.Justification.CENTER)
+        grid = Gtk.Grid(column_spacing=16, row_spacing=6)
+        grid.set_halign(Gtk.Align.CENTER)
+        area.pack_start(status, False, False, 0)
+        area.pack_start(grid, False, False, 0)
+        state = {"url": None}
+
+        def on_response(d, resp):
+            if resp == 1 and state["url"]:
+                webbrowser.open(state["url"])
+            else:
+                d.destroy()
+        dlg.connect("response", on_response)
+        dlg.show_all()
+
+        app_cls = {"ok": "result-ok", "update": "result-warn",
+                   "dev": "note", "error": "result-err"}
+        dep_cls = {"ok": "result-ok", "installed": "result-ok",
+                   "outdated": "result-warn", "missing": "result-err"}
+
+        def show(app, deps):
+            if not dlg.get_visible():
+                return
+            status.set_label(app["message"])
+            status.get_style_context().add_class(app_cls[app["status"]])
+            if app["status"] == "update" and app.get("url"):
+                state["url"] = app["url"]
+                dlg.add_button("Download update", 1)
+            for i, d in enumerate(deps):
+                name = Gtk.Label(xalign=1, yalign=0)
+                name.set_markup(f"<b>{GLib.markup_escape_text(d['name'])}</b>")
+                val = Gtk.Label(label=updates.describe(d), xalign=0)
+                val.set_line_wrap(True)
+                val.set_max_width_chars(40)
+                val.get_style_context().add_class(dep_cls[d["status"]])
+                grid.attach(name, 0, i, 1, 1)
+                grid.attach(val, 1, i, 1, 1)
+            dlg.show_all()
+
+        def work():
+            app = updates.check_app_update()
+            deps = updates.check_dependencies()
+            GLib.idle_add(show, app, deps)
+
+        threading.Thread(target=work, daemon=True).start()
 
     # --- result actions -----------------------------------------------------
     def on_open_file(self, *_):

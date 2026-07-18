@@ -78,6 +78,8 @@ and theme, hit **Convert**.
 - `app-windows.pyw` — Tkinter user interface (Windows)
 - `converter.py` — shared conversion engine (also usable from the
   terminal: `python3 converter.py file.md pdf modern`)
+- `updates.py` — update / dependency checker behind the
+  "Check for updates" button (also runnable: `python3 updates.py`)
 - `make_themes.py` — generates `themes/*.docx`
 - `themes/` — themed pandoc reference documents
 - `install.sh` / `install-windows.bat` — per-OS setup

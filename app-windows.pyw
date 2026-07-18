@@ -8,11 +8,13 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, ttk
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import converter
+import updates
 
 # optional drag & drop support (pip install tkinterdnd2)
 try:
@@ -27,6 +29,7 @@ BG = "#fafafa"
 ACCENT = "#1a73e8"
 OK = "#2e7d32"
 ERR = "#c62828"
+WARN = "#e65100"
 MUTED = "#777777"
 
 KIND_EMOJI = {"md": "📝", "docx": "📄", "pdf": "📕"}
@@ -115,6 +118,10 @@ class App(TkRoot):
         # --- credits ---------------------------------------------------------
         tk.Label(self, text="Made with ❤ by Hassan Ali", bg=BG, fg="#999999",
                  font=("Segoe UI", 8)).pack(side="bottom", pady=6)
+        upd = tk.Label(self, text="Check for updates", bg=BG, fg=ACCENT,
+                       cursor="hand2", font=("Segoe UI", 8, "underline"))
+        upd.pack(side="bottom")
+        upd.bind("<Button-1>", self.on_check_updates)
 
         self._set_formats(None)
         self._draw_zone()
@@ -254,6 +261,57 @@ class App(TkRoot):
         self.result_var.set("")
         self.note_var.set("")
         self.action_frame.pack_forget()
+
+    # --- updates ------------------------------------------------------------------
+    def on_check_updates(self, *_):
+        dlg = tk.Toplevel(self)
+        dlg.title("Updates & dependencies")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        body = ttk.Frame(dlg, padding=16)
+        body.pack(fill="both", expand=True)
+        status = tk.Label(body, text="Checking…", bg=BG, wraplength=360,
+                          justify="center", font=("Segoe UI", 10, "bold"))
+        status.pack(pady=(0, 10))
+        rows = ttk.Frame(body)
+        rows.pack()
+        btns = ttk.Frame(body)
+        btns.pack(pady=(14, 0))
+        ttk.Button(btns, text="Close", command=dlg.destroy).pack(
+            side="right", padx=4)
+
+        dep_colors = {"ok": OK, "installed": OK, "outdated": WARN,
+                      "missing": ERR}
+        app_colors = {"ok": OK, "update": WARN, "dev": MUTED, "error": ERR}
+
+        def show(app, deps):
+            try:
+                if not dlg.winfo_exists():
+                    return
+            except tk.TclError:
+                return
+            status.config(text=app["message"],
+                          fg=app_colors[app["status"]])
+            if app["status"] == "update" and app.get("url"):
+                ttk.Button(btns, text="Download update",
+                           command=lambda: webbrowser.open(app["url"])
+                           ).pack(side="right", padx=4)
+            for i, d in enumerate(deps):
+                tk.Label(rows, text=d["name"], bg=BG, anchor="ne",
+                         font=("Segoe UI", 9, "bold")).grid(
+                    row=i, column=0, sticky="ne", padx=(0, 12), pady=2)
+                tk.Label(rows, text=updates.describe(d), bg=BG,
+                         justify="left", fg=dep_colors[d["status"]],
+                         font=("Segoe UI", 9)).grid(
+                    row=i, column=1, sticky="w", pady=2)
+
+        def work():
+            app = updates.check_app_update()
+            deps = updates.check_dependencies()
+            self.after(0, show, app, deps)
+
+        threading.Thread(target=work, daemon=True).start()
 
     # --- result actions -------------------------------------------------------------
     def on_open(self):
