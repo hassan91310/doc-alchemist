@@ -1,10 +1,8 @@
 name: Build installers
 
 # Runs when you push a version tag like v1.0.0.
-# Builds the Linux .deb and Windows setup .exe as downloadable artifacts.
-# The release on the public repo is then published from your machine:
-#   gh run download --dir /tmp/artifacts
-#   gh release create v1.0.0 --repo <you>/doc-alchemist /tmp/artifacts/*/*
+# Builds the Linux .deb and Windows setup .exe, then publishes them as a
+# GitHub release on this repo.
 
 on:
   push:
@@ -39,7 +37,7 @@ jobs:
         run: python make_themes.py
       - name: Stamp version info
         run: >
-          python -c "import json, os; json.dump({'version': os.environ['GITHUB_REF_NAME'].lstrip('v'), 'repo': os.environ['GITHUB_REPOSITORY_OWNER'] + '/doc-alchemist'}, open('app_info.json', 'w'))"
+          python -c "import json, os; json.dump({'version': os.environ['GITHUB_REF_NAME'].lstrip('v'), 'repo': os.environ['GITHUB_REPOSITORY']}, open('app_info.json', 'w'))"
       - name: Install build deps
         run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown docx2pdf
       - name: Build exe
@@ -67,3 +65,21 @@ jobs:
         with:
           name: windows
           path: dist/DocAlchemist-Setup-*.exe
+
+  publish:
+    needs: [build-deb, build-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" artifacts/*/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "Doc Alchemist $GITHUB_REF_NAME"
+          --generate-notes
