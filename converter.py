@@ -18,8 +18,9 @@ from pathlib import Path
 
 if getattr(sys, "frozen", False):  # running from a PyInstaller bundle
     HERE = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    APP_DIR = Path(sys.executable).parent
 else:
-    HERE = Path(__file__).resolve().parent
+    HERE = APP_DIR = Path(__file__).resolve().parent
 THEME_DIR = HERE / "themes"
 IS_WINDOWS = sys.platform == "win32"
 # don't flash console windows when running from the .pyw GUI on Windows
@@ -96,6 +97,10 @@ def _find_bin(name, extra_paths=()):
 
 
 def _pandoc_bin():
+    # the Windows builds ship their own pandoc next to the exe
+    bundled = APP_DIR / "pandoc" / ("pandoc.exe" if IS_WINDOWS else "pandoc")
+    if bundled.exists():
+        return str(bundled)
     b = _find_bin("pandoc", [
         r"%LOCALAPPDATA%\Pandoc\pandoc.exe",
         r"%ProgramFiles%\Pandoc\pandoc.exe",
@@ -143,25 +148,42 @@ def _docx_to_pdf(src, dest):
                 raise ConversionError("LibreOffice did not produce a PDF.")
             shutil.move(str(produced), str(dest))
         return
-    if IS_WINDOWS:
-        # fall back to Microsoft Word via docx2pdf
-        try:
-            from docx2pdf import convert as _word_convert
-            _word_convert(str(src), str(dest))
-            if Path(dest).exists():
-                return
-        except Exception:
-            pass
-        d2p = _find_bin("docx2pdf",
-                        [HERE / "venv" / "Scripts" / "docx2pdf.exe"])
-        if d2p:
-            try:
-                _run([d2p, str(src), str(dest)])
-                if Path(dest).exists():
-                    return
-            except ConversionError:
-                pass
+    if IS_WINDOWS and _word_to_pdf(src, dest):
+        return
     raise NoPdfEngineError("no LibreOffice or MS Word found")
+
+
+def _word_to_pdf(src, dest):
+    """docx -> pdf through Microsoft Word (COM). True on success."""
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError:
+        return False
+    pythoncom.CoInitialize()  # conversions run on a worker thread
+    word = None
+    try:
+        # DispatchEx starts a private Word instance, so we never grab
+        # (and then quit) a Word window the user has open
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        doc = word.Documents.Open(str(Path(src).resolve()), ReadOnly=True,
+                                  AddToRecentFiles=False)
+        try:
+            doc.SaveAs(str(Path(dest).resolve()), FileFormat=17)  # PDF
+        finally:
+            doc.Close(0)
+        return Path(dest).exists()
+    except Exception:
+        return False
+    finally:
+        if word is not None:
+            try:
+                word.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
 
 
 def _venv_python():

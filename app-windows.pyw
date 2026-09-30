@@ -4,6 +4,7 @@
 Tkinter UI sharing converter.py and themes/ with the Linux app.
 Run install-windows.bat once, then double-click this file.
 """
+import os
 import subprocess
 import sys
 import threading
@@ -11,6 +12,20 @@ import tkinter as tk
 import webbrowser
 from tkinter import filedialog, ttk
 from pathlib import Path
+
+# the windowed exe has no console: sys.stdout/stderr are None and any
+# library that prints (progress bars, warnings) would crash on them
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
+# crisp text on scaled displays (125%/150%) instead of a blurry bitmap
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import converter
@@ -39,7 +54,9 @@ class App(TkRoot):
     def __init__(self):
         super().__init__()
         self.title("Doc Alchemist")
-        self.geometry("480x560")
+        # layout is in 96-dpi pixels; scale it with the display (DPI aware)
+        self.scale = max(1.0, self.winfo_fpixels("1i") / 96)
+        self.geometry(f"{self.px(480)}x{self.px(600)}")
         self.resizable(False, False)
         self.configure(bg=BG)
         self.input_file = None
@@ -63,9 +80,14 @@ class App(TkRoot):
         sub.pack(pady=(0, 12))
 
         # --- drop zone -----------------------------------------------------
-        self.zone = tk.Canvas(main, height=170, bg="#f0f2f5",
+        self.zone = tk.Canvas(main, height=self.px(170), bg="#f0f2f5",
                               highlightthickness=0, cursor="hand2")
         self.zone.pack(fill="x")
+        # keyboard route to the file picker (the zone is mouse-only)
+        self.browse_btn = ttk.Button(main, text="Choose file…",
+                                     command=self.on_browse)
+        self.browse_btn.pack(pady=(8, 0))
+        self.bind_all("<Control-o>", self.on_browse)
         self.zone.bind("<Button-1>", self.on_browse)
         self.zone.bind("<Configure>", lambda e: self._draw_zone())
         if HAS_DND:
@@ -103,12 +125,13 @@ class App(TkRoot):
         # --- result ----------------------------------------------------------
         self.result_var = tk.StringVar()
         self.result_label = tk.Label(main, textvariable=self.result_var,
-                                     bg=BG, wraplength=420, justify="center",
+                                     bg=BG, wraplength=self.px(420),
+                                     justify="center",
                                      font=("Segoe UI", 10, "bold"))
         self.result_label.pack(pady=(14, 2))
         self.note_var = tk.StringVar()
         tk.Label(main, textvariable=self.note_var, bg=BG, fg=MUTED,
-                 wraplength=430, font=("Segoe UI", 8)).pack()
+                 wraplength=self.px(430), font=("Segoe UI", 8)).pack()
         self.action_frame = ttk.Frame(main)
         ttk.Button(self.action_frame, text="Open file",
                    command=self.on_open).pack(side="left", padx=4)
@@ -125,34 +148,40 @@ class App(TkRoot):
 
         self._set_formats(None)
         self._draw_zone()
+        self.browse_btn.focus_set()
+
+    def px(self, n):
+        return int(n * self.scale)
 
     # --- drop zone -----------------------------------------------------------
     def _draw_zone(self):
         z = self.zone
         z.delete("all")
-        w = z.winfo_width() or 440
+        w = z.winfo_width() or self.px(440)
         h = int(z["height"])
+        dy = self.px
         z.create_rectangle(6, 6, w - 6, h - 6, dash=(6, 4), width=2,
                            outline="#9aa7b8")
         if self.input_file:
             kind = converter.input_kind(self.input_file)
-            z.create_text(w / 2, h / 2 - 26, text=KIND_EMOJI.get(kind, "📄"),
+            z.create_text(w / 2, h / 2 - dy(26),
+                          text=KIND_EMOJI.get(kind, "📄"),
                           font=("Segoe UI Emoji", 26))
             name = self.input_file.name
             if len(name) > 44:
                 name = name[:24] + "…" + name[-16:]
-            z.create_text(w / 2, h / 2 + 12, text=name,
+            z.create_text(w / 2, h / 2 + dy(12), text=name,
                           font=("Segoe UI", 11, "bold"), fill="#222222")
-            z.create_text(w / 2, h / 2 + 36,
+            z.create_text(w / 2, h / 2 + dy(36),
                           text="Click to choose a different file",
                           font=("Segoe UI", 9), fill=MUTED)
         else:
-            z.create_text(w / 2, h / 2 - 26, text="📂",
+            z.create_text(w / 2, h / 2 - dy(26), text="📂",
                           font=("Segoe UI Emoji", 26))
             hint = ("Drop a file here" if HAS_DND else "Click to choose a file")
-            z.create_text(w / 2, h / 2 + 12, text=hint,
+            z.create_text(w / 2, h / 2 + dy(12), text=hint,
                           font=("Segoe UI", 12, "bold"), fill="#222222")
-            z.create_text(w / 2, h / 2 + 36,
+            z.create_text(w / 2, h / 2 + dy(36),
                           text="or click to browse — .md, .docx, .pdf",
                           font=("Segoe UI", 9), fill=MUTED)
 
@@ -271,7 +300,8 @@ class App(TkRoot):
         dlg.transient(self)
         body = ttk.Frame(dlg, padding=16)
         body.pack(fill="both", expand=True)
-        status = tk.Label(body, text="Checking…", bg=BG, wraplength=360,
+        status = tk.Label(body, text="Checking…", bg=BG,
+                          wraplength=self.px(360),
                           justify="center", font=("Segoe UI", 10, "bold"))
         status.pack(pady=(0, 10))
         rows = ttk.Frame(body)
@@ -283,7 +313,8 @@ class App(TkRoot):
 
         dep_colors = {"ok": OK, "installed": OK, "outdated": WARN,
                       "missing": ERR}
-        app_colors = {"ok": OK, "update": WARN, "dev": MUTED, "error": ERR}
+        app_colors = {"ok": OK, "update": WARN, "dev": MUTED,
+                      "store": OK, "error": ERR}
 
         def show(app, deps):
             try:
@@ -316,7 +347,6 @@ class App(TkRoot):
     # --- result actions -------------------------------------------------------------
     def on_open(self):
         if self.output_file:
-            import os
             os.startfile(str(self.output_file))
 
     def on_folder(self):

@@ -21,19 +21,18 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Files]
-Source: "dist\DocAlchemist.exe"; DestDir: "{app}"; Flags: ignoreversion
+; the PyInstaller --onedir folder, with pandoc bundled in {app}\pandoc
+Source: "dist\DocAlchemist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "assets\icon.ico"; DestDir: "{app}"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"
-Name: "pandoc"; Description: "Install pandoc (required — document engine)"
-Name: "libreoffice"; Description: "Install LibreOffice (needed for PDF export)"; Flags: unchecked
+Name: "libreoffice"; Description: "Install LibreOffice (best-quality PDF export)"; Flags: unchecked
 
 [Icons]
 Name: "{autoprograms}\Doc Alchemist"; Filename: "{app}\DocAlchemist.exe"
 Name: "{autodesktop}\Doc Alchemist"; Filename: "{app}\DocAlchemist.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "cmd.exe"; Parameters: "/c winget install --id JohnMacFarlane.Pandoc -e --accept-source-agreements --accept-package-agreements"; StatusMsg: "Installing pandoc (this can take a minute)..."; Tasks: pandoc; Flags: runasoriginaluser
-Filename: "cmd.exe"; Parameters: "/c winget install --id TheDocumentFoundation.LibreOffice -e --accept-source-agreements --accept-package-agreements"; StatusMsg: "Installing LibreOffice (this can take several minutes)..."; Tasks: libreoffice; Flags: runasoriginaluser
+Filename: "cmd.exe"; Parameters: "/c winget install --id TheDocumentFoundation.LibreOffice -e --accept-source-agreements --accept-package-agreements"; StatusMsg: "Installing LibreOffice (this can take several minutes)..."; Tasks: libreoffice; Flags: runasoriginaluser runhidden
 Filename: "{app}\DocAlchemist.exe"; Description: "Launch Doc Alchemist"; Flags: nowait postinstall skipifsilent
