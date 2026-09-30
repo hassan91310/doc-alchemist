@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 import converter
@@ -34,6 +35,23 @@ APP_VERSION = _INFO.get("version") or "dev"
 RELEASE_REPO = _INFO.get("repo") or None
 
 
+def _in_msix_package():
+    """True when running from an MSIX package (the Microsoft Store build)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        length = ctypes.c_uint32(0)
+        rc = ctypes.windll.kernel32.GetCurrentPackageFullName(
+            ctypes.byref(length), None)
+        return rc != 15700  # APPMODEL_ERROR_NO_PACKAGE
+    except Exception:
+        return False
+
+
+IS_STORE = _in_msix_package()
+
+
 def _get_json(url):
     with urlopen(Request(url, headers=_HEADERS), timeout=TIMEOUT) as r:
         return json.load(r)
@@ -50,7 +68,12 @@ def _newer(latest, current):
 # --- app update ---------------------------------------------------------------
 
 def check_app_update():
-    """Returns {status: ok|update|dev|error, message, [latest, url]}."""
+    """Returns {status: ok|update|dev|store|error, message, [latest, url]}."""
+    if IS_STORE:
+        # the Store delivers updates; never send users to another installer
+        return {"status": "store",
+                "message": f"Doc Alchemist {APP_VERSION} — updates are "
+                           "installed automatically by the Microsoft Store."}
     if APP_VERSION == "dev":
         return {"status": "dev",
                 "message": "Running from source — the update check "
@@ -138,9 +161,13 @@ def check_dependencies():
     note = "" if pandoc else (
         "required — winget install JohnMacFarlane.Pandoc"
         if converter.IS_WINDOWS else "required — sudo apt install pandoc")
-    deps.append(_dep("pandoc", bool(pandoc),
-                     _cmd_version([pandoc, "--version"]) if pandoc else None,
-                     latest, note))
+    d = _dep("pandoc", bool(pandoc),
+             _cmd_version([pandoc, "--version"]) if pandoc else None,
+             latest, note)
+    if d["status"] == "outdated" and \
+            converter.APP_DIR in Path(pandoc).resolve().parents:
+        d["note"] = "bundled — updated with new app releases"
+    deps.append(d)
 
     soffice = converter._soffice_bin()
     deps.append(_dep(

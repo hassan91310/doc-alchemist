@@ -26,23 +26,34 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    env:
+      PANDOC_VERSION: "3.12"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pandoc
-        run: choco install pandoc -y
+      - name: Download pandoc (bundled with the app)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/jgm/pandoc/releases/download/$env:PANDOC_VERSION/pandoc-$env:PANDOC_VERSION-windows-x86_64.zip"
+          Invoke-WebRequest $url -OutFile pandoc.zip
+          Expand-Archive pandoc.zip -DestinationPath pandoc-dl
+          $dir = (Get-ChildItem pandoc-dl -Directory | Select-Object -First 1).FullName
+          "PANDOC_DIR=$dir" >> $env:GITHUB_ENV
+          $dir >> $env:GITHUB_PATH
       - name: Generate themes
         run: python make_themes.py
       - name: Stamp version info
         run: >
           python -c "import json, os; json.dump({'version': os.environ['GITHUB_REF_NAME'].lstrip('v'), 'repo': os.environ['GITHUB_REPOSITORY']}, open('app_info.json', 'w'))"
       - name: Install build deps
-        run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown docx2pdf
+        run: pip install pyinstaller "markitdown[pdf,docx]" tkinterdnd2 fpdf2 markdown pywin32 uharfbuzz pip-licenses
       - name: Build exe
+        # --onedir: a plain folder, not a self-extracting exe (fewer
+        # antivirus false positives, faster start, needed for MSIX)
         run: >
-          pyinstaller --noconfirm --onefile --windowed
+          pyinstaller --noconfirm --onedir --windowed
           --name DocAlchemist
           --icon assets/icon.ico
           --add-data "themes;themes"
@@ -51,20 +62,73 @@ jobs:
           --collect-all tkinterdnd2
           --collect-all markitdown
           --collect-all magika
-          --hidden-import docx2pdf
+          --collect-all fpdf
           --hidden-import simple_pdf
           --hidden-import markdown
-          --collect-all fpdf
+          --hidden-import win32com.client
+          --hidden-import pythoncom
+          --hidden-import uharfbuzz
           app-windows.pyw
+      - name: Bundle pandoc and license notices
+        shell: pwsh
+        run: |
+          $app = "dist/DocAlchemist"
+          New-Item "$app/pandoc" -ItemType Directory -Force | Out-Null
+          Copy-Item "$env:PANDOC_DIR/*" "$app/pandoc" -Recurse
+          Copy-Item THIRD-PARTY-NOTICES.md, PRIVACY.md $app
+          pip-licenses --with-license-file --no-license-path --format=plain-vertical --output-file "$app/THIRD-PARTY-LICENSES.txt"
       - name: Build installer
         shell: cmd
         run: |
-          for /f "tokens=1 delims=v" %%v in ("%GITHUB_REF_NAME:~1%") do set VER=%%v
           "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /DMyAppVersion=%GITHUB_REF_NAME:~1% installer.iss
+      - name: Build MSIX (Microsoft Store)
+        # set the MSIX_* repository variables (Settings > Secrets and
+        # variables > Actions > Variables) from Partner Center first
+        if: vars.MSIX_PUBLISHER != ''
+        shell: pwsh
+        env:
+          IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          # Store versions are a.b.c.0 (the 4th field is reserved)
+          $parts = @($env:GITHUB_REF_NAME -split '[^0-9]+' | Where-Object { $_ } | Select-Object -First 3)
+          while ($parts.Count -lt 3) { $parts += '0' }
+          $version = ($parts -join '.') + '.0'
+
+          $pkg = "build/msix"
+          New-Item $pkg -ItemType Directory -Force | Out-Null
+          Copy-Item dist/DocAlchemist/* $pkg -Recurse
+          Copy-Item packaging/Assets "$pkg/Assets" -Recurse
+          $xml = Get-Content packaging/AppxManifest.xml -Raw
+          $xml = $xml.Replace('__IDENTITY_NAME__', $env:IDENTITY_NAME)
+          $xml = $xml.Replace('__PUBLISHER_DISPLAY_NAME__', $env:PUBLISHER_DISPLAY_NAME)
+          $xml = $xml.Replace('__PUBLISHER__', $env:PUBLISHER)
+          $xml = $xml.Replace('__VERSION__', $version)
+          Set-Content "$pkg/AppxManifest.xml" $xml -Encoding utf8
+
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" -Directory |
+            Sort-Object Name | Select-Object -Last 1
+          # index only the logos, not the whole app, into resources.pri
+          $pri = "build/pri"
+          New-Item $pri -ItemType Directory -Force | Out-Null
+          Copy-Item "$pkg/Assets", "$pkg/AppxManifest.xml" $pri -Recurse
+          & "$kit\makepri.exe" createconfig /cf build/priconfig.xml /dq en-US /o
+          & "$kit\makepri.exe" new /pr $pri /cf build/priconfig.xml /mn "$pri/AppxManifest.xml" /of "$pkg/resources.pri" /o
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$kit\makeappx.exe" pack /d $pkg /p "dist/DocAlchemist-$version.msix" /o
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: dist/DocAlchemist-Setup-*.exe
+      - uses: actions/upload-artifact@v4
+        # unsigned: upload it to Partner Center, which signs it. It is kept
+        # out of the GitHub release because it can't be installed directly.
+        if: vars.MSIX_PUBLISHER != ''
+        with:
+          name: msix-store
+          path: dist/DocAlchemist-*.msix
 
   publish:
     needs: [build-deb, build-windows]
@@ -74,7 +138,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: deb
+          path: artifacts/deb
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: artifacts/windows
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
